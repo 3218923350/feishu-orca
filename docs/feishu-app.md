@@ -18,6 +18,10 @@
 | `cardkit:card:write` | 卡片实体（回复卡片原地更新） |
 | `contact:user.base:readonly` | 合并转发里显示发言人的名字（没有就显示 open_id） |
 
+## 你的身份（lark-cli 用户登录）
+
+给会话群打项目标签（飞书消息列表的「标签」分组）只能用你自己的身份做，走 `lark-cli --as user`：用 `lark-cli auth login --scope "im:feed_group_v1:read im:feed_group_v1:write"` 登录（以前建的群解散不掉时也会用你的身份试一次，要 `im:chat:delete`）。没登录也能用，只是群不会打标签；登录好后重启服务，没打上的会补上。
+
 ## 事件与回调
 
 - 事件订阅方式选**长连接**，订阅 `im.message.receive_v1`（接收消息）

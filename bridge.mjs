@@ -21,7 +21,7 @@ fs.mkdirSync(DIR, { recursive: true });
 const LARK_ENV = { ...process.env, ...(CFG.larkCliConfigDir ? { LARKSUITE_CLI_CONFIG_DIR: CFG.larkCliConfigDir } : {}) };
 const f = feishu({ appId: CFG.appId, secret: CFG.secret });
 const orca = orcaCli(CFG.orca);
-const st = store(path.join(DIR, 'state.json'), { sessions: {}, seen: {}, cards: {}, last: {} });
+const st = store(path.join(DIR, 'state.json'), { sessions: {}, seen: {}, cards: {}, last: {}, tags: {} });
 const S = st.data.sessions; // 群 chat_id → 会话
 const rt = new Map(); // 群 chat_id → 运行时（不落盘）
 
@@ -109,6 +109,7 @@ async function createOnce(chatId, cardMsg, form) {
     };
     if (first) s.sent.push({ text: first, msgIds: [], at: Date.now(), first: true });
     st.save();
+    tagChat(s);
     await postHeader(s);
     if (ref) await setCard(ref, createdCard({ repo: repo.name, model: label, name: wt.name, chatId: group, path: wt.path }));
     await sendConsole(chatId);
@@ -173,6 +174,7 @@ async function attach(chatId, id, cwd) {
     sessionId: id, offset: info.size, terminal, createdAt: Date.now(), title, closed: false, sent: [], held: null, turn: null, wait: null,
   };
   st.save();
+  tagChat(s);
   await postHeader(s);
   await newCard(group, historyCard(history(file, 3)));
   await notice(chatId, `已接上「${title}」`);
@@ -558,6 +560,35 @@ async function dissolve(chatId) {
   }
 }
 
+// 会话群按项目打飞书标签（消息列表左侧的分组），群多了好找。标签只能用你的身份操作（lark-cli --as user）
+async function larkUser(args) {
+  const r = await run(CFG.larkCli, [...args, '--as', 'user'], { env: LARK_ENV, timeout: 30_000 });
+  let j; try { j = JSON.parse(r.out); } catch {}
+  if (!j?.ok) throw new Error((j?.error?.message || r.err || r.out).replace(/\s+/g, ' ').slice(0, 200));
+  return j.data || {};
+}
+async function tagOf(name, fresh) {
+  if (st.data.tags[name] && !fresh) return st.data.tags[name];
+  const { groups = [] } = await larkUser(['im', '+feed-group-list', '--page-all']);
+  st.data.tags[name] = groups.find((g) => g.name === name && g.type === 'normal')?.group_id
+    || (await larkUser(['im', 'feed.groups', 'create', '--data', JSON.stringify({ feed_group_creator: { type: 'normal', name } })])).group_id;
+  st.save();
+  return st.data.tags[name];
+}
+let tagChain = Promise.resolve(); // 一个一个打：同一个项目同时打两个群会建出两个同名标签
+function tagChat(s) {
+  const add = async (fresh) => {
+    const d = await larkUser(['im', 'feed.groups', 'batch_add_item', '--params', JSON.stringify({ feed_group_id: await tagOf(s.repo.name, fresh) }), '--data', JSON.stringify({ items: [{ feed_id: s.chatId, feed_type: 'chat' }] })]);
+    if (d.failed_items?.length) throw new Error(d.failed_items[0].error_message);
+  };
+  tagChain = tagChain.then(async () => {
+    try { await add(false); } catch { await add(true); } // 标签被你删了：重新找、重新建
+    s.tagged = true; st.save();
+    log('tag', s.chatId, s.repo.name);
+  }).catch((e) => log('ERR tag', s.chatId, e.message));
+  return tagChain;
+}
+
 // ───────────── 定时 ─────────────
 let ticking = false;
 setInterval(() => { // 读会话记录
@@ -611,6 +642,7 @@ for (const s of Object.values(S)) {
   if (!s.removed || s.dissolved) continue;
   dissolve(s.chatId).then((err) => { if (!err) { s.dissolved = true; st.save(); log('dissolved', s.chatId); } }).catch(() => {});
 }
+for (const s of Object.values(S)) if (!s.removed && !s.tagged) tagChat(s); // 以前建的群、上次没打成的补上
 log('start', Object.keys(S).length, 'sessions');
 const stop = () => { for (const c of inbound) c.stop(); st.flush(); process.exit(0); };
 process.on('SIGTERM', stop);
