@@ -1,16 +1,22 @@
 {
   "name": "feishu-orca",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "0.1.0",
+  "description": "飞书里的 Orca：在飞书上新建工作树、和 Orca 终端里的模型对话，电脑和飞书两边同步",
+  "main": "bridge.mjs",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node bridge.mjs",
+    "test": "node --test test/*.test.mjs",
+    "setup": "node bin/setup.mjs"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "dependencies": {
     "@larksuite/channel": "^0.7.1"
+  },
+  "license": "MIT",
+  "bin": {
+    "feishu-orca-setup": "bin/setup.mjs"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
