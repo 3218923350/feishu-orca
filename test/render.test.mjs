@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fit, splitText, toolSummary, turnCard, units } from '../lib/render.mjs';
+import { fit, pingText, splitText, toolSummary, turnCard, units } from '../lib/render.mjs';
 
 test('splitText 不切开代码块：两边各自补全 ```', () => {
   const text = ['开头', '```js', ...Array.from({ length: 30 }, (_, i) => `line ${i}`), '```', '结尾'].join('\n');
@@ -64,4 +64,12 @@ test('units：插话显示在这一轮里', () => {
   const us = units(t, true);
   assert.match(us[1].el.content, /^> 💬 \*\*你插话：\*\* 顺便说下星期几/);
   assert.match(us[2].el.content, /电脑上插话/);
+});
+
+test('pingText：完成带用时和结论开头，跑得久才 @你', () => {
+  const blocks = [{ type: 'text', text: '先看看' }, { type: 'tools', tools: [] }, { type: 'text', text: '**改好了**，测试\n都过了' }];
+  const t = { status: 'done', startedAt: 0, endedAt: 65_000, blocks };
+  assert.equal(pingText(t, 'ou_me'), '✅ 完成 · 1 分 5 秒｜改好了，测试 都过了');
+  assert.equal(pingText({ ...t, endedAt: 3 * 60_000 }, 'ou_me'), '<at user_id="ou_me"></at> ✅ 完成 · 3 分 0 秒｜改好了，测试 都过了');
+  assert.equal(pingText({ status: 'error', note: '终端被关了', startedAt: 0, endedAt: 1000, blocks: [] }, 'ou_me'), '⚠️ 终端被关了');
 });

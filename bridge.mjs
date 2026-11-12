@@ -7,7 +7,7 @@ import { feishu, sleep } from './lib/feishu.mjs';
 import { loadConfig } from './lib/config.mjs';
 import { agentViewPlugin, modelCatalog, orca as orcaCli, shq } from './lib/orca.mjs';
 import { events, newestSince, readNew, sessionInfo, sessionsIn, transcriptPath } from './lib/claude.mjs';
-import { fit, turnCard, units } from './lib/render.mjs';
+import { fit, pingText, turnCard, units } from './lib/render.mjs';
 import { consoleCard, createdCard, creatingCard, failedCard, heldCard, historyCard, listCard, noticeCard, screenCard, sessionCard, waitCard } from './lib/cards.mjs';
 import { isPassive, toPrompt } from './lib/message.mjs';
 import { parsePrompt, sameText, worktreeName } from './lib/util.mjs';
@@ -241,13 +241,14 @@ async function send(s, text, msgIds) {
 
 // ───────────── 会话记录 → 群 ─────────────
 function startTurn(s, { source, prompt, replyTo, msgIds }) {
-  if (s.turn?.status === 'running') endTurn(s, 'done');
+  if (s.turn?.status === 'running') endTurn(s, 'done', '', false);
   s.turn = { source, prompt, replyTo, msgIds: msgIds || [], startedAt: Date.now(), status: 'running', blocks: [], cards: [], tools: {} };
   st.save();
 }
 function ensureTurn(s) { if (!s.turn || s.turn.status !== 'running') startTurn(s, { source: 'computer', prompt: '' }); return s.turn; }
 
-function endTurn(s, status, note) {
+// notify：飞书上发起的这一轮做完或断了，补发一句提醒（电脑上发起的你人就在电脑前，不用提醒）
+function endTurn(s, status, note, notify = status !== 'interrupted') {
   const t = s.turn;
   if (!t || t.status !== 'running') return;
   t.status = status; t.endedAt = Date.now(); if (note) t.note = note;
@@ -255,6 +256,10 @@ function endTurn(s, status, note) {
   if (status === 'done') for (const m of t.msgIds) f.react(m, 'DONE').catch(() => {});
   if (s.wait) closeWait(s, '这一轮已经结束');
   scheduleRender(s, true);
+  if (notify && (t.source === 'feishu' || t.source === 'first')) serial(s.chatId, () => { // 排在最后一次渲染后面，保证是群里最新一条
+    const text = pingText(t, CFG.owner);
+    return t.replyTo ? f.replyText(t.replyTo, text).catch(() => f.sendText(s.chatId, text)) : f.sendText(s.chatId, text);
+  });
   st.save();
 }
 
@@ -371,7 +376,7 @@ async function followNewFile(s, terms) {
   const pending = s.sent.some((p) => history(x.file, 2).some((h) => sameText(h.prompt, p.text)));
   if (!pending && !(live.length === 1 && live[0].handle === s.terminal)) return;
   log('switch-session', s.chatId, s.sessionId, '→', x.id);
-  if (s.turn?.status === 'running') endTurn(s, 'done');
+  if (s.turn?.status === 'running') endTurn(s, 'done', '', false);
   s.sessionId = x.id; s.switchedAt = Date.now();
   s.offset = x.size > 200_000 ? x.size : 0; // 已经很长的文件不回放历史
   st.save();
@@ -393,6 +398,7 @@ async function checkWait(s) {
   if (s.wait?.hash === hash) return;
   if (s.wait) { await setCard(s.wait.ref, waitCard(s.chatId, p)); s.wait = { ...s.wait, hash, prompt: p }; st.save(); return; }
   const ref = await newCard(s.chatId, waitCard(s.chatId, p), t.cards[t.cards.length - 1]?.messageId || t.replyTo);
+  if (t.source !== 'computer') f.replyText(ref.messageId, `<at user_id="${CFG.owner}"></at> 🙋 等你回答`).catch((e) => log('ERR at', e.message)); // 卡在你身上了，@你
   s.wait = { ref, hash, prompt: p };
   st.save();
 }
