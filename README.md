@@ -23,6 +23,10 @@
 
 群里的命令：`/stop` 中断，`/screen` 看终端画面，`/key enter|esc|up|down|tab|1…` 按键；其他 `/xxx`（`/compact`、`/clear`…）照常发给 Claude。
 
+## Slack 版
+
+也可以通过 Slack 继续本机 Orca / Claude Code 会话：每个会话一个独立私有频道，支持会话列表分页、电脑输出同步和交互按钮。Slack 版独立安装，不影响飞书版服务，见 **[slack/README.md](slack/README.md)**。
+
 ## 要求
 
 - macOS（常驻服务用 launchd），Node.js ≥ 20
